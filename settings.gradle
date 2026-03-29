@@ -1,8 +1,14 @@
-apply from: 'minecraft.gradle'
-rootProject.name = "sedna-${minecraft_version}-${minecraft_sdk}"
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { url = "https://maven.neoforged.net/releases" }
+    }
+}
+
+rootProject.name = "sedna-1.21.1-neoforge"
 
 def substituteLocal(final directoryName, final libraryName) {
-    final def path = new File("../${directoryName}");
+    final def path = new File("../${directoryName}")
     if (path.exists()) {
         println("Found local [${directoryName}] project, substituting...")
         includeBuild(path) {
@@ -13,6 +19,6 @@ def substituteLocal(final directoryName, final libraryName) {
     }
 }
 
-substituteLocal('ceres', 'li.cil.ceres:ceres')
-substituteLocal('sedna', 'li.cil.sedna:sedna')
-substituteLocal('buildroot', 'li.cil.sedna:sedna-buildroot')
+substituteLocal("ceres", "li.cil.ceres:ceres")
+substituteLocal("sedna", "li.cil.sedna:sedna")
+substituteLocal("buildroot", "li.cil.sedna:sedna-buildroot")

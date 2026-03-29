@@ -1,102 +1,165 @@
-buildscript {
-    repositories {
-        maven { url = 'https://maven.minecraftforge.net' }
-        mavenCentral()
-    }
-    dependencies {
-        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6+', changing: true
-    }
-}
+import java.nio.charset.StandardCharsets
 
 plugins {
-    id 'java'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id "idea"
+    id "maven-publish"
+    id "net.neoforged.gradle.userdev" version "7.1.21"
 }
-
-apply plugin: 'net.minecraftforge.gradle'
-apply from: 'minecraft.gradle'
 
 def getGitRef() {
     try {
         final def stdout = new ByteArrayOutputStream()
         exec {
-            commandLine 'git', 'rev-parse', '--short', 'HEAD'
+            commandLine "git", "rev-parse", "--short", "HEAD"
             standardOutput = stdout
         }
         return stdout.toString().trim()
     } catch (final Throwable ignored) {
-        return 'unknown'
+        return "unknown"
     }
 }
 
 version = "${semver}+${getGitRef()}"
-group = 'li.cil.sedna'
+group = "li.cil.sedna"
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+base {
+    archivesName = project.name
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+sourceSets.main.resources {
+    srcDir("src/generated/resources")
+    exclude("**/.cache/**")
+}
+
+tasks.named("wrapper", Wrapper).configure {
+    distributionType = Wrapper.DistributionType.BIN
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = StandardCharsets.UTF_8.name()
+}
+
+final def hasGithubPackageCredentials =
+    (project.hasProperty("gpr.user") && project.hasProperty("gpr.key")) ||
+        (System.getenv("GITHUB_ACTOR") && System.getenv("GITHUB_TOKEN"))
 
 repositories {
     mavenCentral()
-    final def GithubPackages = [
-        ["fnuecke/ceres", "li.cil.ceres"],
-        ["fnuecke/sedna", "li.cil.sedna"],
-        ["fnuecke/buildroot", "li.cil.sedna"]
-    ]
-    GithubPackages.each { final repo, final group ->
-        maven {
-            url = uri("https://maven.pkg.github.com/${repo}")
-            credentials {
-                username = project.findProperty("gpr.user") ?: System.getenv("GPR_USER")
-                password = project.findProperty("gpr.key") ?: System.getenv("GPR_KEY")
+    maven {
+        url = "https://maven.neoforged.net/releases"
+    }
+    if (hasGithubPackageCredentials) {
+        final def githubPackages = [
+            ["fnuecke/ceres", "li.cil.ceres"],
+            ["fnuecke/sedna", "li.cil.sedna"],
+            ["fnuecke/buildroot", "li.cil.sedna"]
+        ]
+        githubPackages.each { final repo, final group ->
+            maven {
+                url = uri("https://maven.pkg.github.com/${repo}")
+                credentials {
+                    username = project.findProperty("gpr.user") ?: System.getenv("GPR_USER")
+                    password = project.findProperty("gpr.key") ?: System.getenv("GPR_KEY")
+                }
+                content { includeGroup group }
             }
-            content { includeGroup group }
         }
     }
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation "net.neoforged:neoforge:${neo_version}"
 
-    implementation('li.cil.ceres:ceres:0.0.4') { transitive = false }
-    implementation('li.cil.sedna:sedna:2.0.9') { transitive = false }
-    implementation('li.cil.sedna:sedna-buildroot:0.0.8') { transitive = false }
+    // Keep the runtime split intact: the Sedna mod stays a thin mod container while
+    // the core libraries remain separate dependencies contributed to the runtime classpath.
+    implementation("li.cil.ceres:ceres:0.0.4") { transitive = false }
+    implementation("li.cil.sedna:sedna:2.0.8") { transitive = false }
+    implementation("li.cil.sedna:sedna-buildroot:0.0.8") { transitive = false }
 }
 
-minecraft {
-    mappings channel: 'official', version: minecraft_version
+runs {
+    configureEach {
+        workingDirectory project.file("run")
+        modSource project.sourceSets.main
+    }
+
+    client {}
+
+    server {
+        argument "--nogui"
+    }
+
+    gameTestServer {}
+
+    data {
+        arguments.addAll "--mod", mod_id, "--all",
+            "--output", file("src/generated/resources/").getAbsolutePath(),
+            "--existing", file("src/main/resources/").getAbsolutePath()
+    }
+}
+
+tasks.withType(ProcessResources).configureEach {
+    final def replaceProperties = [
+        minecraft_version       : minecraft_version,
+        minecraft_version_range : minecraft_version_range,
+        neo_version             : neo_version,
+        neo_version_range       : neo_version_range,
+        loader_version_range    : loader_version_range,
+        mod_id                  : mod_id,
+        mod_name                : mod_name,
+        mod_license             : mod_license,
+        jar_version             : project.version,
+        mod_authors             : mod_authors,
+        mod_description         : mod_description,
+    ]
+    inputs.properties(replaceProperties)
+
+    filesMatching(["META-INF/neoforge.mods.toml"]) {
+        expand(replaceProperties)
+    }
 }
 
 jar {
-    finalizedBy 'shadowJar'
-
     manifest {
         attributes([
-            'Specification-Title'     : 'sedna',
-            'Specification-Vendor'    : 'Sangar',
-            'Specification-Version'   : '1',
-            'Implementation-Title'    : project.name,
-            'Implementation-Version'  : "${semver}",
-            'Implementation-Vendor'   : 'Sangar',
-            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+            "Specification-Title"     : "sedna",
+            "Specification-Vendor"    : "Sangar",
+            "Specification-Version"   : "1",
+            "Implementation-Title"    : project.name,
+            "Implementation-Version"  : "${project.version}",
+            "Implementation-Vendor"   : "Sangar",
+            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
         ])
     }
 }
 
-shadowJar {
-    finalizedBy 'reobfJar'
-
-    dependencies {
-        include(dependency('li.cil.ceres:ceres:.*'))
-        include(dependency('li.cil.sedna:sedna:.*'))
-        include(dependency('li.cil.sedna:sedna-buildroot:.*'))
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+            version = semver
+            artifact jar
+        }
     }
-
-    archiveClassifier.set('')
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = System.getenv("GITHUB_MAVEN_URL") ?: ""
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
 }
 
-reobf {
-    shadowJar {}
-}
-
-artifacts {
-    archives shadowJar
+idea {
+    module {
+        for (final String exclude in ["run", "out", "logs", "src/generated"]) {
+            excludeDirs += file(exclude)
+        }
+    }
 }
