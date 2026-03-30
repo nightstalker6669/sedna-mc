@@ -6,8 +6,13 @@ pluginManagement {
 }
 
 rootProject.name = "sedna-1.21.1-neoforge"
+final def isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
 
-def substituteLocal(final directoryName, final libraryName) {
+def substituteLocal = { final directoryName, final libraryName ->
+    if (directoryName == "buildroot" && isWindows) {
+        return
+    }
+
     final def path = new File("../${directoryName}")
     if (path.exists()) {
         println("Found local [${directoryName}] project, substituting...")
